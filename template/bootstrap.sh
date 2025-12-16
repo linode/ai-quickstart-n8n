@@ -9,7 +9,7 @@ notify() {
     curl -s -d "$message" "https://ntfy.sh/$(hostname)" || true
 }
 
-notify "☁️ cloud-init package install finished. starting install.sh..."
+notify "☁️ cloud-init package install finished. starting bootstrap.sh..."
 sleep 2
 
 # Install NVIDIA drivers
@@ -46,6 +46,10 @@ nvidia-ctk runtime configure --runtime=docker
 
 # Restart Docker to apply NVIDIA runtime configuration
 systemctl restart docker
+
+# Download project files to /opt/<PROJECT_NAME>
+notify "📥 Downloading project files to /opt/${PROJECT_NAME}..."
+
 
 # Create systemd service for AI Quickstart Stack
 notify "⚙️ Registering systemd service for ${PROJECT_NAME}..."

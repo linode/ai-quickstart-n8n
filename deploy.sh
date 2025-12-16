@@ -45,7 +45,7 @@ _setup_required_files() {
     REMOTE_TEMP_DIR="${TMPDIR:-/tmp}/${PROJECT_NAME}-$$"
 
     QUICKSTART_TOOLS_PATH=$(_dl "$SCRIPT_DIR" "script/quickstart_tools.sh" "$TOOLS_RAW_BASE" "$REMOTE_TEMP_DIR") || { echo "ERROR: Failed to get quickstart_tools.sh" >&2; exit 1; }
-    local f; for f in cloud-init.yaml docker-compose.yml install.sh Caddyfile; do
+    local f; for f in cloud-init.yaml docker-compose.yml bootstrap.sh Caddyfile; do
         _dl "$SCRIPT_DIR" "template/$f" "$REPO_RAW_BASE" "$REMOTE_TEMP_DIR" >/dev/null || { echo "ERROR: Failed to get $f" >&2; exit 1; }
     done
     TEMPLATE_DIR="${SCRIPT_DIR}/template"; [ -d "$TEMPLATE_DIR" ] && [ -f "$TEMPLATE_DIR/cloud-init.yaml" ] || TEMPLATE_DIR="${REMOTE_TEMP_DIR}/template"
@@ -294,11 +294,11 @@ if [ ! -f "${TEMPLATE_DIR}/Caddyfile" ]; then
 fi
 CADDYFILE_BASE64=$(base64 < "${TEMPLATE_DIR}/Caddyfile" | tr -d '\n')
 
-# Base64 encode install.sh (need to add notify function)
-if [ ! -f "${TEMPLATE_DIR}/install.sh" ]; then
-    error_exit "template/install.sh not found"
+# Base64 encode bootstrap.sh (need to add notify function)
+if [ ! -f "${TEMPLATE_DIR}/bootstrap.sh" ]; then
+    error_exit "template/bootstrap.sh not found"
 fi
-INSTALL_SH_BASE64=$(base64 < "${TEMPLATE_DIR}/install.sh" | tr -d '\n')
+BOOTSTRAP_SH_BASE64=$(base64 < "${TEMPLATE_DIR}/bootstrap.sh" | tr -d '\n')
 
 # Encode n8n credentials and workflow files
 if [ -f "${TEMPLATE_DIR}/n8n_credentials.json" ]; then
@@ -326,7 +326,7 @@ CLOUD_INIT_DATA=$(cat "${TEMPLATE_DIR}/cloud-init.yaml" | \
     sed "s|_INSTANCE_LABEL_PLACEHOLDER_|${INSTANCE_LABEL}|g" | \
     sed "s|_CADDYFILE_BASE64_CONTENT_PLACEHOLDER_|${CADDYFILE_BASE64}|g" | \
     sed "s|_DOCKER_COMPOSE_BASE64_CONTENT_PLACEHOLDER_|${DOCKER_COMPOSE_BASE64}|g" | \
-    sed "s|_INSTALL_SH_BASE64_CONTENT_PLACEHOLDER_|${INSTALL_SH_BASE64}|g" | \
+    sed "s|_BOOTSTRAP_SH_BASE64_CONTENT_PLACEHOLDER_|${BOOTSTRAP_SH_BASE64}|g" | \
     sed "s|_N8N_CREDENTIALS_BASE64_CONTENT_PLACEHOLDER_|${N8N_CREDENTIALS_BASE64}|g" | \
     sed "s|_N8N_WORKFLOW_BASE64_CONTENT_PLACEHOLDER_|${N8N_WORKFLOW_BASE64}|g")
 

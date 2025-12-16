@@ -33,7 +33,7 @@ write_files:
   - path: /opt/_PROJECT_NAME_PLACEHOLDER_/install.sh
     permissions: '0755'
     encoding: base64
-    content: _INSTALL_SH_BASE64_CONTENT_PLACEHOLDER_
+    content: _BOOTSTRAP_SH_BASE64_CONTENT_PLACEHOLDER_
 
   - path: /opt/_PROJECT_NAME_PLACEHOLDER_/n8n_credentials.json
     permissions: '0644'
@@ -45,6 +45,6 @@ write_files:
     encoding: base64
     content: _N8N_WORKFLOW_BASE64_CONTENT_PLACEHOLDER_
 
-# Run install script
+# Run bootstrap script
 runcmd:
-  - bash /opt/_PROJECT_NAME_PLACEHOLDER_/install.sh
+  - bash /opt/_PROJECT_NAME_PLACEHOLDER_/bootstrap.sh

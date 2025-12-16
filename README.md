@@ -150,8 +150,8 @@ Once complete, you'll see:
 
 ### Configuration files in GPU Instance
 ```
-   # Install script called by cloud-init service
-   /opt/ai-quickstart-n8n/install.sh
+   # Bootstrap script called by cloud-init service
+   /opt/ai-quickstart-n8n/bootstrap.sh
 
    # docker compose file called by systemctl at startup
    /opt/ai-quickstart-n8n/docker-compose.yml
@@ -192,7 +192,7 @@ ai-quickstart-n8n/
     ├── cloud-init.yaml          # Cloud-init configuration
     ├── docker-compose.yml       # Docker Compose configuration
     ├── Caddyfile                # Caddy reverse proxy configuration
-    └── install.sh               # Post-boot installation script
+    └── bootstrap.sh             # Post-boot installation script
 ```
 
 -----------------------------------------

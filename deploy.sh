@@ -282,38 +282,11 @@ echo ""
 # Create Cloud-Init with Base64 Encoded Files
 #==============================================================================
 
-# Base64 encode docker-compose.yml
-if [ ! -f "${TEMPLATE_DIR}/docker-compose.yml" ]; then
-    error_exit "template/docker-compose.yml not found"
-fi
-DOCKER_COMPOSE_BASE64=$(base64 < "${TEMPLATE_DIR}/docker-compose.yml" | tr -d '\n')
-
-# Base64 encode Caddyfile
-if [ ! -f "${TEMPLATE_DIR}/Caddyfile" ]; then
-    error_exit "template/Caddyfile not found"
-fi
-CADDYFILE_BASE64=$(base64 < "${TEMPLATE_DIR}/Caddyfile" | tr -d '\n')
-
 # Base64 encode bootstrap.sh (need to add notify function)
 if [ ! -f "${TEMPLATE_DIR}/bootstrap.sh" ]; then
     error_exit "template/bootstrap.sh not found"
 fi
 BOOTSTRAP_SH_BASE64=$(base64 < "${TEMPLATE_DIR}/bootstrap.sh" | tr -d '\n')
-
-# Encode n8n credentials and workflow files
-if [ -f "${TEMPLATE_DIR}/n8n_credentials.json" ]; then
-    N8N_CREDENTIALS_BASE64=$(base64 < "${TEMPLATE_DIR}/n8n_credentials.json" | tr -d '\n')
-else
-    warn "n8n_credentials.json not found in template directory"
-    N8N_CREDENTIALS_BASE64=""
-fi
-
-if [ -f "${TEMPLATE_DIR}/n8n_workflow.json" ]; then
-    N8N_WORKFLOW_BASE64=$(base64 < "${TEMPLATE_DIR}/n8n_workflow.json" | tr -d '\n')
-else
-    warn "n8n_workflow.json not found in template directory"
-    N8N_WORKFLOW_BASE64=""
-fi
 
 # Read cloud-init template
 if [ ! -f "${TEMPLATE_DIR}/cloud-init.yaml" ]; then
@@ -324,11 +297,7 @@ fi
 CLOUD_INIT_DATA=$(cat "${TEMPLATE_DIR}/cloud-init.yaml" | \
     sed "s|_PROJECT_NAME_PLACEHOLDER_|${PROJECT_NAME}|g" | \
     sed "s|_INSTANCE_LABEL_PLACEHOLDER_|${INSTANCE_LABEL}|g" | \
-    sed "s|_CADDYFILE_BASE64_CONTENT_PLACEHOLDER_|${CADDYFILE_BASE64}|g" | \
-    sed "s|_DOCKER_COMPOSE_BASE64_CONTENT_PLACEHOLDER_|${DOCKER_COMPOSE_BASE64}|g" | \
-    sed "s|_BOOTSTRAP_SH_BASE64_CONTENT_PLACEHOLDER_|${BOOTSTRAP_SH_BASE64}|g" | \
-    sed "s|_N8N_CREDENTIALS_BASE64_CONTENT_PLACEHOLDER_|${N8N_CREDENTIALS_BASE64}|g" | \
-    sed "s|_N8N_WORKFLOW_BASE64_CONTENT_PLACEHOLDER_|${N8N_WORKFLOW_BASE64}|g")
+    sed "s|_BOOTSTRAP_SH_BASE64_CONTENT_PLACEHOLDER_|${BOOTSTRAP_SH_BASE64}|g")
 
 #==============================================================================
 # Show Confirmation Prompt

@@ -16,34 +16,15 @@ packages:
   - jq
   - btop
   - nvtop
+  - unzip
   - ubuntu-drivers-common
 
 # Files to write
 write_files:
-  - path: /opt/_PROJECT_NAME_PLACEHOLDER_/docker-compose.yml
-    permissions: '0644'
-    encoding: base64
-    content: _DOCKER_COMPOSE_BASE64_CONTENT_PLACEHOLDER_
-
-  - path: /opt/_PROJECT_NAME_PLACEHOLDER_/Caddyfile
-    permissions: '0644'
-    encoding: base64
-    content: _CADDYFILE_BASE64_CONTENT_PLACEHOLDER_
-
-  - path: /opt/_PROJECT_NAME_PLACEHOLDER_/install.sh
+  - path: /opt/_PROJECT_NAME_PLACEHOLDER_/bootstrap.sh
     permissions: '0755'
     encoding: base64
     content: _BOOTSTRAP_SH_BASE64_CONTENT_PLACEHOLDER_
-
-  - path: /opt/_PROJECT_NAME_PLACEHOLDER_/n8n_credentials.json
-    permissions: '0644'
-    encoding: base64
-    content: _N8N_CREDENTIALS_BASE64_CONTENT_PLACEHOLDER_
-
-  - path: /opt/_PROJECT_NAME_PLACEHOLDER_/n8n_workflow.json
-    permissions: '0644'
-    encoding: base64
-    content: _N8N_WORKFLOW_BASE64_CONTENT_PLACEHOLDER_
 
 # Run bootstrap script
 runcmd:

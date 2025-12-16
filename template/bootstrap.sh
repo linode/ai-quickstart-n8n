@@ -47,28 +47,50 @@ nvidia-ctk runtime configure --runtime=docker
 # Restart Docker to apply NVIDIA runtime configuration
 systemctl restart docker
 
-# Download project files to /opt/<PROJECT_NAME>
-notify "📥 Downloading project files to /opt/${PROJECT_NAME}..."
+# Download project files from GitHub
+notify "📥 Downloading project files from GitHub..."
+TEMP_DIR=$(mktemp -d)
+curl -fsSL "https://github.com/linode/${PROJECT_NAME}/archive/refs/heads/main.zip" -o "${TEMP_DIR}/repo.zip"
+unzip -q "${TEMP_DIR}/repo.zip" -d "${TEMP_DIR}"
+cd "${TEMP_DIR}/${PROJECT_NAME}-main/template" && find . -type f ! -name "bootstrap.sh" -exec cp {} "/opt/${PROJECT_NAME}/"
+rm -rf "${TEMP_DIR}"
 
+# Create systemd service for setup.sh to run at boot
+notify "⚙️ Registering systemd service for ${PROJECT_NAME} setup ..."
+cat > /etc/systemd/system/${PROJECT_NAME}-setup.service << EOF
+[Unit]
+Description=Setup ${PROJECT_NAME} Stack at boot
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/${PROJECT_NAME}/setup.sh
+RemainAfterExit=no
+[Install]
+WantedBy=multi-user.target
+EOF
 
 # Create systemd service for AI Quickstart Stack
-notify "⚙️ Registering systemd service for ${PROJECT_NAME}..."
+notify "⚙️ Registering systemd service for ${PROJECT_NAME} stack ..."
 cat > /etc/systemd/system/${PROJECT_NAME}.service << EOF
 [Unit]
 Description=Start ${PROJECT_NAME} Stack
 After=docker.service
 Requires=docker.service
-
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/${PROJECT_NAME}
 ExecStart=/usr/bin/docker compose --progress quiet up -d
 ExecStop=/usr/bin/docker compose down
 RemainAfterExit=yes
-
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# Enable service (will start containers on boot)
+systemctl daemon-reload
+systemctl enable ${PROJECT_NAME}.service
+systemctl enable ${PROJECT_NAME}-setup.service
 
 # Create .env file with domain configuration
 notify "🌐 Configuring domain with public IP..."
@@ -78,12 +100,8 @@ SUBDOMAIN=${IP_LABEL}
 DOMAIN_NAME=ip.linodeusercontent.com
 EOF
 
-# Enable service (will start containers on boot)
-systemctl daemon-reload
-systemctl enable ${PROJECT_NAME}.service
-
 # Pull latest Docker images
-notify "⬇️ Downloading latest vLLM & n8n container images... (this may take 2 - 3 min)..."
+notify "⬇️ Downloading container images... (this may take 2 - 3 min)..."
 cd /opt/${PROJECT_NAME}
 docker compose pull --quiet || true
 
@@ -101,7 +119,7 @@ if [ -f "/lib/modules/${CURRENT_KERNEL}/kernel/nvidia-580-open/nvidia.ko" ] || \
     if nvidia-smi > /dev/null 2>&1; then
         # Start AI Quickstart Stack
         cd /opt/${PROJECT_NAME}
-        notify "🚀 Starting vLLM & n8n with docker compose up ..."
+        notify "🚀 Starting docker compose up ..."
         docker compose up -d
         exit 0
     fi

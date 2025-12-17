@@ -394,7 +394,7 @@ wait_for_instance_ready() {
     [ "$INSTANCE_STATUS" = false ] && _error_exit_with_cleanup "Instance failed to reach 'running' status"
     [ "$INSTANCE_STATUS" != ready ] && _error_exit_with_cleanup "Instance failed to become SSH accessible"
     log_to_file "INFO" "Instance running and SSH accessible in ${ELAPSED_STR}"
-    progress "$NC" "Instance is SSH accessible (took ${ELAPSED_STR})"
+    progress "$NC" "Instance is ready and accessible via SSH (took ${ELAPSED_STR})"
     echo ""
     echo ""
 }
@@ -442,13 +442,10 @@ wait_for_instance_ready 180
 #------------------------------------------------------------------------------
 print_msg "$YELLOW" "Waiting cloud-init to finish installing required packages ... (this may take 3 - 5 minutes)"
 scroll_up 8
-START_TIME=$(date +%s)
 monitor_remote_log "/var/log/${PROJECT_NAME}-bootstrap.log" "(🔄 Rebooting to load NVIDIA drivers|🚀 Starting docker compose up)" "ERROR:" 300
-ELAPSED=$(($(date +%s) - START_TIME))
 log_to_file "INFO" "Bootstrap installation completed in ${ELAPSED}s"
-echo -e "cloud-init process completed (took $([ $ELAPSED -ge 60 ] && echo "$((ELAPSED / 60))m $((ELAPSED % 60))s" || echo "${ELAPSED}s"))"
 echo ""
-sleep 10
+sleep 5
 
 #------------------------------------------------------------------------------
 # Phase 3: Wait for Instance to reboot (max 2 minutes)
@@ -460,7 +457,7 @@ wait_for_instance_ready 120
 #------------------------------------------------------------------------------
 # Phase 4: Monitor setup.sh progress via log file
 #------------------------------------------------------------------------------
-print_msg "$YELLOW" "Monitoring n8n setup and vLLM model download ... (this may take 5 - 10 minutes)"
+print_msg "$YELLOW" "Continue n8n setup and LLM model download ..."
 scroll_up 8
 START_TIME=$(date +%s)
 monitor_remote_log "/var/log/${PROJECT_NAME}-setup.log" "DONE !!" "ERROR:" 900

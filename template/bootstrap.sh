@@ -75,7 +75,7 @@ fi
 # Download project files from GitHub
 notify "📥 Downloading project files from GitHub..."
 TEMP_DIR=$(mktemp -d)
-curl -fsSL "https://github.com/takashito/${PROJECT_NAME}/archive/refs/heads/main.zip" -o "${TEMP_DIR}/repo.zip"
+curl -fsSL "https://github.com/linode/${PROJECT_NAME}/archive/refs/heads/main.zip" -o "${TEMP_DIR}/repo.zip"
 unzip -q "${TEMP_DIR}/repo.zip" -d "${TEMP_DIR}"
 cp -r "${TEMP_DIR}/${PROJECT_NAME}-main/setup/"* "/opt/${PROJECT_NAME}/"
 rm -rf "${TEMP_DIR}"

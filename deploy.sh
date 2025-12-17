@@ -440,7 +440,7 @@ wait_for_instance_ready 180
 #------------------------------------------------------------------------------
 # Phase 2: Monitor bootstrap.sh progress via log file
 #------------------------------------------------------------------------------
-print_msg "$YELLOW" "Waiting cloud-init to finish installing required packages ... (this may take 3 - 5 minutes)"
+print_msg "$YELLOW" "Waiting cloud-init to finish installing required packages ... (this may take 1 - 2 minutes)"
 scroll_up 8
 monitor_remote_log "/var/log/${PROJECT_NAME}-bootstrap.log" "(🔄 Rebooting to load NVIDIA drivers|🚀 Starting docker compose up)" "ERROR:" 300
 log_to_file "INFO" "Bootstrap installation completed in ${ELAPSED}s"
@@ -450,7 +450,7 @@ sleep 5
 #------------------------------------------------------------------------------
 # Phase 3: Wait for Instance to reboot (max 2 minutes)
 #------------------------------------------------------------------------------
-print_msg "$YELLOW" "Waiting for Instance to reboot... (this may take 1 - 2 minutes)"
+print_msg "$YELLOW" "Waiting for Instance to reboot..."
 scroll_up 8
 wait_for_instance_ready 120
 
@@ -482,15 +482,15 @@ echo "   IP Address:     $INSTANCE_IP"
 echo "   Region:         $SELECTED_REGION"
 echo "   Instance Type:  $SELECTED_TYPE"
 echo ""
-INSTANCE_IP_LABEL=$(echo "$INSTANCE_IP" | tr . -)
-print_msg "$CYAN" "🌐 n8n Access:"
-printf "   URL:         ${BOLD}https://${INSTANCE_IP_LABEL}.ip.linodeusercontent.com${NC}\n"
-echo "   (Create owner account on first login)"
-echo ""
 print_msg "$CYAN" "🔐 SSH Access:"
 echo "   SSH:         ssh -i ${SSH_KEY_FILE} root@${INSTANCE_IP}"
 echo "   SSH Key:     ${SSH_KEY_FILE}"
 echo "   Root Pass:   ${INSTANCE_PASSWORD}"
+echo ""
+INSTANCE_IP_LABEL=$(echo "$INSTANCE_IP" | tr . -)
+print_msg "$CYAN" "🌐 n8n Access:"
+printf "   URL:         ${BOLD}https://${INSTANCE_IP_LABEL}.ip.linodeusercontent.com${NC}\n"
+echo "   (Create owner account on first login)"
 echo ""
 print_msg "$CYAN" "📋 Execution Log:"
 echo "   Log file:    $LOG_FILE"
@@ -499,7 +499,7 @@ print_msg "$GREEN" "━━━━━━━━━━━━━━━━━━━━
 echo ""
 print_msg "$YELLOW" "💡 Next Steps:"
 printf "   1. 🌐 Open n8n: ${CYAN}https://${INSTANCE_IP_LABEL}.ip.linodeusercontent.com${NC}\n"
-echo "   2. Create your admin account on first login"
+echo "   2. 👤 Create your admin account on first login"
 echo "   3. 🤖 Build AI workflows with the pre-configured vLLM backend"
 echo ""
 print_msg "$YELLOW" "📁 Check AI Stack Configuration:"

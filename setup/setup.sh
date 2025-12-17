@@ -42,7 +42,7 @@ log "⏳ Waiting for n8n to be ready..."
 START_TIME=$(date +%s)
 N8N_READY=false
 while [ $(($(date +%s) - START_TIME)) -lt 120 ]; do
-    [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5678/healthz || echo 000)" = "200" ] && { N8N_READY=true; log "n8n is ready (took $(($(date +%s) - START_TIME))s)"; break; }
+    [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5678/healthz || echo 000)" = "200" ] && { N8N_READY=true; break; }
     sleep 2
 done
 [ "$N8N_READY" = true ] || { log "ERROR: Timeout waiting for n8n health check"; exit 1; }
@@ -85,7 +85,7 @@ log "⏳ Waiting for vLLM to download gpt-oss model... (this may take 5 - 10 min
 
 VLLM_START=$(date +%s)
 while [ $(($(date +%s) - VLLM_START)) -lt 600 ]; do
-    curl -s http://localhost:8000/v1/models | grep -q '"id":"openai/gpt-oss-20b"' && { log "vLLM model loaded (took $(($(date +%s) - VLLM_START))s)"; break; }
+    curl -s http://localhost:8000/v1/models | grep -q '"id":"openai/gpt-oss-20b"' && break
     sleep 5
 done
 

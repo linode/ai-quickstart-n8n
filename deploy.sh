@@ -93,7 +93,7 @@ INSTANCE_ID=""
 # This extends error_exit with instance cleanup capability
 _error_exit_with_cleanup() {
     local message="$1"
-    local offer_delete="${2:-false}"
+    local offer_delete="${2:-true}"
 
     print_msg "$RED" "❌ ERROR: $message"
     log_to_file "ERROR" "$message"
@@ -391,8 +391,8 @@ wait_for_instance_ready() {
         sleep 3
     done
 
-    [ "$INSTANCE_STATUS" = false ] && _error_exit_with_cleanup "Instance failed to reach 'running' status" true
-    [ "$INSTANCE_STATUS" != ready ] && _error_exit_with_cleanup "Instance failed to become SSH accessible" true
+    [ "$INSTANCE_STATUS" = false ] && _error_exit_with_cleanup "Instance failed to reach 'running' status"
+    [ "$INSTANCE_STATUS" != ready ] && _error_exit_with_cleanup "Instance failed to become SSH accessible"
     log_to_file "INFO" "Instance running and SSH accessible in ${ELAPSED_STR}"
     progress "$NC" "Instance is SSH accessible (took ${ELAPSED_STR})"
     echo ""
@@ -404,13 +404,28 @@ monitor_remote_log() {
     local log_path="$1" exit_pattern="$2" error_pattern="$3" timeout=${4:-300}
     local START_TIME=$(date +%s) LAST_LINE=0
 
-    while [ $(($(date +%s) - START_TIME)) -lt $timeout ]; do ssh_exec "[ -f ${log_path} ]" && break; sleep 3; done
-    ssh_exec "[ -f ${log_path} ]" || _error_exit_with_cleanup "Log file ${log_path} not found after ${timeout}s" true
+    while [ $(($(date +%s) - START_TIME)) -lt $timeout ]; do
+        ssh_exec "[ -f ${log_path} ]" && break
+        ELAPSED=$(($(date +%s) - START_TIME))
+        ELAPSED_STR=$([ $ELAPSED -ge 60 ] && echo "$((ELAPSED / 60))m $((ELAPSED % 60))s" || echo "${ELAPSED}s")
+        progress "$YELLOW" "Waiting... Elapsed: ${ELAPSED_STR}"
+        sleep 3
+    done
+    ssh_exec "[ -f ${log_path} ]" || _error_exit_with_cleanup "Waiting timeout after ${timeout}s"
 
     while true; do
-        scroll_up 8
         CONTENT=$(ssh_exec "tail -n +$((LAST_LINE + 1)) ${log_path} 2>/dev/null" || echo "")
-        [ -n "$CONTENT" ] && { echo "$CONTENT"; LAST_LINE=$((LAST_LINE + $(echo "$CONTENT" | wc -l))); echo "$CONTENT" | grep -qE "$error_pattern" && _error_exit_with_cleanup "$(echo "$CONTENT" | grep -E "$error_pattern")" true; echo "$CONTENT" | grep -qE "$exit_pattern" && break; }
+        if [ -n "$CONTENT" ]; then
+            progress "$CONTENT"; echo ""; scroll_up 8
+            LAST_LINE=$((LAST_LINE + $(echo "$CONTENT" | wc -l)))
+            echo "$CONTENT" | grep -qE "$error_pattern" && _error_exit_with_cleanup "$(echo "$CONTENT" | grep -E "$error_pattern")"
+            echo "$CONTENT" | grep -qE "$exit_pattern" && break
+            START_TIME=$(date +%s)
+        else
+            ELAPSED=$(($(date +%s) - START_TIME))
+            ELAPSED_STR=$([ $ELAPSED -ge 60 ] && echo "$((ELAPSED / 60))m $((ELAPSED % 60))s" || echo "${ELAPSED}s")
+            [ $ELAPSED -ge 20 ] && progress "$YELLOW" "Waiting ... Elapsed: ${ELAPSED_STR}"
+        fi
         sleep 3
     done
 }
@@ -425,14 +440,15 @@ wait_for_instance_ready 180
 #------------------------------------------------------------------------------
 # Phase 2: Monitor bootstrap.sh progress via log file
 #------------------------------------------------------------------------------
-print_msg "$YELLOW" "Monitoring bootstrap installation ... (this may take 5 - 10 minutes)"
+print_msg "$YELLOW" "Waiting cloud-init to finish installing required packages ... (this may take 3 - 5 minutes)"
 scroll_up 8
 START_TIME=$(date +%s)
 monitor_remote_log "/var/log/${PROJECT_NAME}-bootstrap.log" "(🔄 Rebooting to load NVIDIA drivers|🚀 Starting docker compose up)" "ERROR:" 300
 ELAPSED=$(($(date +%s) - START_TIME))
 log_to_file "INFO" "Bootstrap installation completed in ${ELAPSED}s"
+echo -e "cloud-init process completed (took $([ $ELAPSED -ge 60 ] && echo "$((ELAPSED / 60))m $((ELAPSED % 60))s" || echo "${ELAPSED}s"))"
 echo ""
-sleep 5
+sleep 10
 
 #------------------------------------------------------------------------------
 # Phase 3: Wait for Instance to reboot (max 2 minutes)

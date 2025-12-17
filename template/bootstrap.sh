@@ -18,7 +18,7 @@ notify() {
     curl -s -d "$message" "https://ntfy.sh/$(hostname)" || true
 }
 
-notify "☁️ cloud-init package install finished. starting bootstrap.sh..."
+notify "☁️  cloud-init package install finished. starting bootstrap.sh..."
 sleep 2
 
 # Install NVIDIA drivers (skip if already installed)
@@ -80,25 +80,8 @@ unzip -q "${TEMP_DIR}/repo.zip" -d "${TEMP_DIR}"
 cp -r "${TEMP_DIR}/${PROJECT_NAME}-main/setup/"* "/opt/${PROJECT_NAME}/"
 rm -rf "${TEMP_DIR}"
 
-# Create systemd service for setup.sh to run at boot
-if [ -f "/opt/${PROJECT_NAME}/setup.sh" ]; then
-    notify "⚙️ Registering systemd service for ${PROJECT_NAME} setup ..."
-    cat > /etc/systemd/system/${PROJECT_NAME}-setup.service << EOF
-[Unit]
-Description=Setup ${PROJECT_NAME} Stack at boot
-After=docker.service
-Requires=docker.service
-[Service]
-Type=oneshot
-ExecStart=/bin/bash /opt/${PROJECT_NAME}/setup.sh
-RemainAfterExit=no
-[Install]
-WantedBy=multi-user.target
-EOF
-fi
-
 # Create systemd service for AI Quickstart Stack
-notify "⚙️ Registering systemd service for ${PROJECT_NAME} stack ..."
+notify "⚙️  Registering systemd service for ${PROJECT_NAME} stack ..."
 cat > /etc/systemd/system/${PROJECT_NAME}.service << EOF
 [Unit]
 Description=Start ${PROJECT_NAME} Stack
@@ -114,6 +97,23 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
+# Create systemd service for setup.sh to run at boot
+if [ -f "/opt/${PROJECT_NAME}/setup.sh" ]; then
+    notify "⚙️  Registering systemd service for ${PROJECT_NAME} setup ..."
+    cat > /etc/systemd/system/${PROJECT_NAME}-setup.service << EOF
+[Unit]
+Description=Setup ${PROJECT_NAME} Stack at boot
+After=${PROJECT_NAME}.service
+Requires=${PROJECT_NAME}.service
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/${PROJECT_NAME}/setup.sh
+RemainAfterExit=no
+[Install]
+WantedBy=multi-user.target
+EOF
+fi
+
 # Enable services (will start containers on boot)
 systemctl daemon-reload
 systemctl enable ${PROJECT_NAME}.service
@@ -128,7 +128,7 @@ DOMAIN_NAME=ip.linodeusercontent.com
 EOF
 
 # Pull latest Docker images
-notify "⬇️ Downloading container images... (this may take 2 - 3 min)..."
+notify "⬇️  Downloading container images... (this may take 2 - 3 min)..."
 cd /opt/${PROJECT_NAME}
 docker compose pull --quiet || true
 

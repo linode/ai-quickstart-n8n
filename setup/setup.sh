@@ -15,7 +15,7 @@ readonly NC='\033[0m'
 
 # Logging function
 log() {
-    echo -e "${GREEN}$1${NC}" | tee -a "$LOG_FILE"
+    echo "$1" | tee -a "$LOG_FILE"
 }
 
 # Check if setup was already completed
@@ -74,7 +74,7 @@ log "Workflow imported"
 
 # Install Universal Reranker node
 log "Installing n8n-nodes-universal-reranker node..."
-docker exec n8n npm install n8n-nodes-universal-reranker
+docker exec n8n sh -c "mkdir -p ~/.n8n/nodes && cd ~/.n8n/nodes && npm install n8n-nodes-universal-reranker"
 
 log "Restarting n8n container..."
 docker restart n8n

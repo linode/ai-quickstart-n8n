@@ -188,11 +188,15 @@ The script will show instance details and ask for confirmation before deletion.
 ai-quickstart-n8n/
 ├── deploy.sh                    # Main deployment script
 ├── delete.sh                    # Instance deletion script
-└── template/
-    ├── cloud-init.yaml          # Cloud-init configuration
+├── template/
+│   ├── cloud-init.yaml          # Cloud-init configuration
+│   └── bootstrap.sh             # Post-boot installation script
+└── setup/
     ├── docker-compose.yml       # Docker Compose configuration
     ├── Caddyfile                # Caddy reverse proxy configuration
-    └── bootstrap.sh             # Post-boot installation script
+    ├── setup.sh                 # Setup script run by systemd
+    ├── n8n_credentials.json     # n8n credentials template
+    └── n8n_workflow.json        # n8n workflow template
 ```
 
 -----------------------------------------

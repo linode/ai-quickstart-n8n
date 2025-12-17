@@ -43,13 +43,10 @@ _dl() {
 
 _setup_required_files() {
     REMOTE_TEMP_DIR="${TMPDIR:-/tmp}/${PROJECT_NAME}-$$"
-
     QUICKSTART_TOOLS_PATH=$(_dl "$SCRIPT_DIR" "script/quickstart_tools.sh" "$TOOLS_RAW_BASE" "$REMOTE_TEMP_DIR") || { echo "ERROR: Failed to get quickstart_tools.sh" >&2; exit 1; }
-    local f; for f in cloud-init.yaml docker-compose.yml bootstrap.sh Caddyfile; do
-        _dl "$SCRIPT_DIR" "template/$f" "$REPO_RAW_BASE" "$REMOTE_TEMP_DIR" >/dev/null || { echo "ERROR: Failed to get $f" >&2; exit 1; }
-    done
+    _dl "$SCRIPT_DIR" "template/cloud-init.yaml" "$REPO_RAW_BASE" "$REMOTE_TEMP_DIR" >/dev/null || { echo "ERROR: Failed to get cloud-init.yaml" >&2; exit 1; }
+    _dl "$SCRIPT_DIR" "template/bootstrap.sh" "$REPO_RAW_BASE" "$REMOTE_TEMP_DIR" >/dev/null || { echo "ERROR: Failed to get bootstrap.sh" >&2; exit 1; }
     TEMPLATE_DIR="${SCRIPT_DIR}/template"; [ -d "$TEMPLATE_DIR" ] && [ -f "$TEMPLATE_DIR/cloud-init.yaml" ] || TEMPLATE_DIR="${REMOTE_TEMP_DIR}/template"
-
     export QUICKSTART_TOOLS_PATH TEMPLATE_DIR
 }
 
@@ -369,71 +366,72 @@ echo ""
 show_step "⏳ Step 10: Monitoring Deployment ..."
 scroll_up 8
 
-#------------------------------------------------------------------------------
-# Phase 1: Wait for instance status to become "running" (max 3 minutes)
-#------------------------------------------------------------------------------
-print_msg "$YELLOW" "Waiting instance to boot up ... (this may take 2 - 3 minutes)"
-START_TIME=$(date +%s)
-TIMEOUT=180
+# Setup SSH helper function
+SSH_OPTS=(-o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i "$SSH_KEY_FILE")
+ssh_exec() { ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "$@" </dev/null 2>/dev/null; }
 
-while true; do
-    ELAPSED=$(($(date +%s) - START_TIME))
-    ELAPSED_STR=$([ $ELAPSED -ge 60 ] && echo "$((ELAPSED / 60))m $((ELAPSED % 60))s" || echo "${ELAPSED}s")
+# Function to wait for instance to be running and SSH accessible
+wait_for_instance_ready() {
+    local timeout=${1:-180}
+    local START_TIME=$(date +%s)
+    local INSTANCE_STATUS=false
 
-    STATUS=$(linode_api_call "/linode/instances/${INSTANCE_ID}" "$TOKEN" | jq -r '.status')
-    [ "$STATUS" = "running" ] && break
-    [ $ELAPSED -ge $TIMEOUT ] && break
-    
-    progress "$YELLOW" "Status: ${STATUS:-unknown} - Elapsed: ${ELAPSED_STR}"
-    sleep 5
-done
+    while [ $(($(date +%s) - START_TIME)) -lt $timeout ]; do
+        ELAPSED=$(($(date +%s) - START_TIME))
+        ELAPSED_STR=$([ $ELAPSED -ge 60 ] && echo "$((ELAPSED / 60))m $((ELAPSED % 60))s" || echo "${ELAPSED}s")
+        STATUS=$(linode_api_call "/linode/instances/${INSTANCE_ID}" "$TOKEN" | jq -r '.status')
 
-[ "$STATUS" != "running" ] && _error_exit_with_cleanup "Instance failed to reach 'running' status" true
-log_to_file "INFO" "Instance status reached 'running' in ${ELAPSED_STR}"
-progress "$NC" "Instance is now in running status (took ${ELAPSED_STR})"
-echo ""
-echo ""
+        if [ "$STATUS" = "running" ]; then
+            INSTANCE_STATUS=running
+            ssh_exec exit && { INSTANCE_STATUS=ready; break; }
+            progress "$YELLOW" "Status: waiting SSH access - Elapsed: ${ELAPSED_STR}"
+        else
+            progress "$YELLOW" "Status: ${STATUS:-unknown} - Elapsed: ${ELAPSED_STR}"
+        fi
+        sleep 3
+    done
 
-#------------------------------------------------------------------------------
-# Phase 2: Waiting for cloud-init to finish package install (max 3 minutes)
-#------------------------------------------------------------------------------
-print_msg "$YELLOW" "Waiting cloud-init to finish installing required packages ... (this may take 3 - 5 minutes)"
-scroll_up 8
-START_TIME=$(date +%s)
-
-# Start ntfy.sh JSON stream monitor
-# Wait up to 180s for first message event, then continue until "Rebooting" or "Starting"
-# Use --no-buffer to disable buffering
-exec 3< <(curl -sN "https://ntfy.sh/${INSTANCE_LABEL}/json")
-
-# Wait for first message event with 300s timeout
-while IFS= read -t 300 -r line <&3; do
-    event=$(echo "$line" | jq -r '.event // empty')
-    [ "$event" = "message" ] && break
-done || {
-    exec 3<&-
-    _error_exit_with_cleanup "Timeout: No cloud-init progress for 300 seconds" true
+    [ "$INSTANCE_STATUS" = false ] && _error_exit_with_cleanup "Instance failed to reach 'running' status" true
+    [ "$INSTANCE_STATUS" != ready ] && _error_exit_with_cleanup "Instance failed to become SSH accessible" true
+    log_to_file "INFO" "Instance running and SSH accessible in ${ELAPSED_STR}"
+    progress "$NC" "Instance is SSH accessible (took ${ELAPSED_STR})"
+    echo ""
+    echo ""
 }
 
-# Process first message and continue until termination keyword found
-while true; do
-    message=$(echo "$line" | jq -r '.message // empty')
-    [ -n "$message" ] && {
-        echo "$message" >&2
-        echo "$message" | grep -qE "(Rebooting|Starting)" && break
-    }
+# Function to monitor remote log file and wait for completion
+monitor_remote_log() {
+    local log_path="$1" exit_pattern="$2" error_pattern="$3" timeout=${4:-300}
+    local START_TIME=$(date +%s) LAST_LINE=0
 
-    IFS= read -r line <&3 || break
-    [ "$(echo "$line" | jq -r '.event // empty')" = "message" ] || continue
-done
+    while [ $(($(date +%s) - START_TIME)) -lt $timeout ]; do ssh_exec "[ -f ${log_path} ]" && break; sleep 3; done
+    ssh_exec "[ -f ${log_path} ]" || _error_exit_with_cleanup "Log file ${log_path} not found after ${timeout}s" true
 
-exec 3<&-
+    while true; do
+        scroll_up 8
+        CONTENT=$(ssh_exec "tail -n +$((LAST_LINE + 1)) ${log_path} 2>/dev/null" || echo "")
+        [ -n "$CONTENT" ] && { echo "$CONTENT"; LAST_LINE=$((LAST_LINE + $(echo "$CONTENT" | wc -l))); echo "$CONTENT" | grep -qE "$error_pattern" && _error_exit_with_cleanup "$(echo "$CONTENT" | grep -E "$error_pattern")" true; echo "$CONTENT" | grep -qE "$exit_pattern" && break; }
+        sleep 3
+    done
+}
+
+#------------------------------------------------------------------------------
+# Phase 1: Wait for instance status to become "running" and SSH accessible (max 3 minutes)
+#------------------------------------------------------------------------------
+print_msg "$YELLOW" "Waiting instance to boot up ... (this may take 2 - 3 minutes)"
+scroll_up 8
+wait_for_instance_ready 180
+
+#------------------------------------------------------------------------------
+# Phase 2: Monitor bootstrap.sh progress via log file
+#------------------------------------------------------------------------------
+print_msg "$YELLOW" "Monitoring bootstrap installation ... (this may take 5 - 10 minutes)"
+scroll_up 8
+START_TIME=$(date +%s)
+monitor_remote_log "/var/log/${PROJECT_NAME}-bootstrap.log" "(🔄 Rebooting to load NVIDIA drivers|🚀 Starting docker compose up)" "ERROR:" 300
 ELAPSED=$(($(date +%s) - START_TIME))
-log_to_file "INFO" "Cloud-init package installation completed"
-echo -e "cloud-init process completed (took $([ $ELAPSED -ge 60 ] && echo "$((ELAPSED / 60))m $((ELAPSED % 60))s" || echo "${ELAPSED}s"))"
+log_to_file "INFO" "Bootstrap installation completed in ${ELAPSED}s"
 echo ""
-
-# Wait 5 seconds for reboot to initiate
 sleep 5
 
 #------------------------------------------------------------------------------
@@ -441,127 +439,17 @@ sleep 5
 #------------------------------------------------------------------------------
 print_msg "$YELLOW" "Waiting for Instance to reboot... (this may take 1 - 2 minutes)"
 scroll_up 8
-START_TIME=$(date +%s)
-
-# Setup SSH command with options to suppress warnings
-SSH_OPTS=(-o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i "$SSH_KEY_FILE")
-
-while true; do
-    ELAPSED=$(($(date +%s) - START_TIME))
-    ELAPSED_STR=$([ $ELAPSED -ge 60 ] && echo "$((ELAPSED / 60))m $((ELAPSED % 60))s" || echo "${ELAPSED}s")
-    progress "$YELLOW" "Status: booting ... Elapsed: ${ELAPSED_STR}"
-
-    [ $ELAPSED -ge 120 ] && _error_exit_with_cleanup "Instance failed to become accessible" true
-    ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" exit </dev/null 2>/dev/null && break
-    sleep 2
-done
-log_to_file "INFO" "Instance rebooted and SSH accessible in ${ELAPSED_STR}s"
-progress "$NC" "Instance is now running status. (took ${ELAPSED_STR})"
-echo ""
-echo ""
+wait_for_instance_ready 120
 
 #------------------------------------------------------------------------------
-# Phase 4: Verify Containers are Running
+# Phase 4: Monitor setup.sh progress via log file
 #------------------------------------------------------------------------------
-print_msg "$YELLOW" "Waiting for containers to start..."
-scroll_up 8
-
-CONTAINER_CHECK=$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "docker ps --format '{{.Names}}'" </dev/null 2>/dev/null || echo "")
-
-CONTAINERS_OK=true
-for container in vllm embedding reranker pgvector; do
-    echo "$CONTAINER_CHECK" | grep -q "$container" || CONTAINERS_OK=false
-done
-
-if [ "$CONTAINERS_OK" = true ]; then
-    log_to_file "INFO" "Docker containers verified: vLLM, embedding, reranker, pgvector running"
-    echo "Base containers are running (vLLM, embedding, reranker, pgvector)"
-else
-    log_to_file "WARN" "Container check incomplete: $CONTAINER_CHECK"
-    warn "Some containers may still be starting. Check manually with: docker ps"
-fi
-echo ""
-
-print_msg "$YELLOW" "Waiting for n8n to be ready..."
+print_msg "$YELLOW" "Monitoring n8n setup and vLLM model download ... (this may take 5 - 10 minutes)"
 scroll_up 8
 START_TIME=$(date +%s)
-
-while true; do
-    ELAPSED=$(($(date +%s) - START_TIME))
-    ELAPSED_STR=$([ $ELAPSED -ge 60 ] && echo "$((ELAPSED / 60))m $((ELAPSED % 60))s" || echo "${ELAPSED}s")
-    progress "$YELLOW" "Status: starting ... Elapsed: ${ELAPSED_STR}"
-
-    if [ "$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -o /dev/null -w '%{http_code}' http://localhost:5678/healthz" </dev/null 2>/dev/null || echo "000")" = "200" ]; then
-        log_to_file "INFO" "n8n health check passed in ${ELAPSED}s"
-        progress "$NC" "n8n is ready (took ${ELAPSED_STR})"
-        N8N_READY=true
-        break
-    fi
-    if [ $ELAPSED -ge 120 ]; then
-        log_to_file "WARN" "n8n health check timeout after ${ELAPSED_STR}"
-        warn "Timeout waiting for n8n health check. It may still be starting up."
-        N8N_READY=false
-        break
-    fi
-    sleep 2
-done
-echo ""
-
-# Import n8n credentials and workflow if n8n is ready
-if [ "$N8N_READY" = true ]; then
-    print_msg "$YELLOW" "Setting up n8n with credentials, workflow, and community node..."
-
-    # Copy and import credentials
-    [ -n "$N8N_CREDENTIALS_BASE64" ] && \
-        ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "docker cp /opt/${PROJECT_NAME}/n8n_credentials.json n8n:/home/node/ && docker exec n8n n8n import:credentials --input=/home/node/n8n_credentials.json" </dev/null 2>&1 && \
-        success "Credentials imported" || warn "Credentials import failed"
-
-    # Copy and import workflow
-    [ -n "$N8N_WORKFLOW_BASE64" ] && \
-        ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "docker cp /opt/${PROJECT_NAME}/n8n_workflow.json n8n:/home/node/ && docker exec n8n n8n import:workflow --input=/home/node/n8n_workflow.json" </dev/null 2>&1 && \
-        success "Workflow imported" || warn "Workflow import failed"
-
-    # Install community node and restart n8n
-    if ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "docker exec n8n npm install n8n-nodes-universal-reranker" </dev/null 2>&1; then
-        success "Community node installed"
-        log_to_file "INFO" "Restarting n8n to load community node"
-        ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "docker restart n8n" </dev/null 2>&1
-
-        # Wait for n8n restart
-        sleep 10
-        RESTART_START=$(date +%s)
-        while [ $(($(date +%s) - RESTART_START)) -lt 60 ]; do
-            [ "$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -o /dev/null -w '%{http_code}' http://localhost:5678/healthz" </dev/null 2>/dev/null || echo "000")" = "200" ] && \
-                success "n8n restarted successfully" && break
-            sleep 2
-        done
-    else
-        warn "Community node install failed. Install manually: docker exec n8n npm install n8n-nodes-universal-reranker"
-    fi
-    echo ""
-fi
-
-print_msg "$YELLOW" "Waiting for vLLM to download gpt-oss model... (this may take 3-5 minutes)"
-scroll_up 8
-START_TIME=$(date +%s)
-
-while true; do
-    ELAPSED=$(($(date +%s) - START_TIME))
-    ELAPSED_STR=$([ $ELAPSED -ge 60 ] && echo "$((ELAPSED / 60))m $((ELAPSED % 60))s" || echo "${ELAPSED}s")
-    progress "$YELLOW" "Status: downloading model ... Elapsed: ${ELAPSED_STR}"
-
-    if ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s http://localhost:8000/v1/models" </dev/null 2>/dev/null | grep -q '"id":"openai/gpt-oss-20b"'; then
-        log_to_file "INFO" "vLLM model loaded successfully in ${ELAPSED_STR}"
-        progress "$NC" "vLLM model is loaded (took ${ELAPSED_STR})"
-        break
-    fi
-    if [ $ELAPSED -ge 600 ]; then
-        log_to_file "WARN" "vLLM model load timeout after ${ELAPSED_STR}"
-        warn "Timeout waiting for vLLM model to load. Model may still be downloading."
-        break
-    fi
-    sleep 2
-done
+monitor_remote_log "/var/log/${PROJECT_NAME}-setup.log" "DONE !!" "ERROR:" 900
+ELAPSED=$(($(date +%s) - START_TIME))
+log_to_file "INFO" "Setup completed in ${ELAPSED}s"
 echo ""
 echo ""
 

@@ -1,63 +1,89 @@
 set -e
 
-# Project name (used for paths, service names, etc.)
-PROJECT_NAME="ai-quickstart-n8n"
+# Get project name from script's parent directory
+PROJECT_NAME="$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)")"
 
-# Function to send ntfy notification
+# Log file
+LOG_FILE="/var/log/${PROJECT_NAME}-bootstrap.log"
+
+# ANSI color codes
+readonly YELLOW='\033[1;33m'
+readonly GREEN='\033[0;32m'
+readonly NC='\033[0m'
+
+# Function to send ntfy notification and log to file
 notify() {
     local message="$1"
+    echo "$message" | tee -a "$LOG_FILE"
     curl -s -d "$message" "https://ntfy.sh/$(hostname)" || true
 }
 
 notify "☁️ cloud-init package install finished. starting bootstrap.sh..."
 sleep 2
 
-# Install NVIDIA drivers
-notify "🎮 Installing NVIDIA drivers...(this may takes 2 - 3 minutes)"
-ubuntu-drivers autoinstall
+# Install NVIDIA drivers (skip if already installed)
+if nvidia-smi > /dev/null 2>&1; then
+    notify "🎮 NVIDIA drivers already installed, skipping..."
+else
+    notify "🎮 Installing NVIDIA drivers...(this may takes 2 - 3 minutes)"
+    ubuntu-drivers autoinstall
+fi
 
-# Install Docker
-notify "🐳 Installing Docker & Compose..."
-curl -fsSL https://get.docker.com -o get-docker.sh
-sh get-docker.sh
-rm get-docker.sh
+# Install Docker (skip if already installed)
+if command -v docker > /dev/null 2>&1; then
+    notify "🐳 Docker already installed, skipping..."
+else
+    notify "🐳 Installing Docker & Compose..."
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sh get-docker.sh
+    rm get-docker.sh
+fi
 
-# Add NVIDIA Container Toolkit repository
-notify "📦 Installing NVIDIA Container Toolkit..."
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+DOCKER_RESTART_NEEDED=false
+# Install NVIDIA Container Toolkit (skip if already installed)
+if dpkg -l | grep -q nvidia-container-toolkit; then
+    notify "📦 NVIDIA Container Toolkit already installed, skipping..."
+else
+    notify "📦 Installing NVIDIA Container Toolkit..."
+    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+    curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+    apt-get update
+    apt-get install -y nvidia-container-toolkit
+    nvidia-ctk runtime configure --runtime=docker
+    DOCKER_RESTART_NEEDED=true
+fi
 
 # Configure Docker registry mirrors
-mkdir -p /etc/docker
-cat > /etc/docker/daemon.json <<'EOF'
+if [ ! -f /etc/docker/daemon.json ]; then
+    mkdir -p /etc/docker
+    cat > /etc/docker/daemon.json <<'EOF'
 {
   "registry-mirrors": [
     "https://mirror.gcr.io"
   ]
 }
 EOF
+    DOCKER_RESTART_NEEDED=true
+fi
 
-# Update and install NVIDIA Container Toolkit
-apt-get update
-apt-get install -y nvidia-container-toolkit
-
-# Configure Docker for NVIDIA
-nvidia-ctk runtime configure --runtime=docker
-
-# Restart Docker to apply NVIDIA runtime configuration
-systemctl restart docker
+# Restart Docker if needed
+if [ "$DOCKER_RESTART_NEEDED" = true ]; then
+    notify "🔄 Restarting Docker to apply changes..."
+    systemctl restart docker
+fi
 
 # Download project files from GitHub
 notify "📥 Downloading project files from GitHub..."
 TEMP_DIR=$(mktemp -d)
-curl -fsSL "https://github.com/linode/${PROJECT_NAME}/archive/refs/heads/main.zip" -o "${TEMP_DIR}/repo.zip"
+curl -fsSL "https://github.com/takashito/${PROJECT_NAME}/archive/refs/heads/main.zip" -o "${TEMP_DIR}/repo.zip"
 unzip -q "${TEMP_DIR}/repo.zip" -d "${TEMP_DIR}"
-cd "${TEMP_DIR}/${PROJECT_NAME}-main/template" && find . -type f ! -name "bootstrap.sh" -exec cp {} "/opt/${PROJECT_NAME}/"
+cp -r "${TEMP_DIR}/${PROJECT_NAME}-main/setup/"* "/opt/${PROJECT_NAME}/"
 rm -rf "${TEMP_DIR}"
 
 # Create systemd service for setup.sh to run at boot
-notify "⚙️ Registering systemd service for ${PROJECT_NAME} setup ..."
-cat > /etc/systemd/system/${PROJECT_NAME}-setup.service << EOF
+if [ -f "/opt/${PROJECT_NAME}/setup.sh" ]; then
+    notify "⚙️ Registering systemd service for ${PROJECT_NAME} setup ..."
+    cat > /etc/systemd/system/${PROJECT_NAME}-setup.service << EOF
 [Unit]
 Description=Setup ${PROJECT_NAME} Stack at boot
 After=docker.service
@@ -69,6 +95,7 @@ RemainAfterExit=no
 [Install]
 WantedBy=multi-user.target
 EOF
+fi
 
 # Create systemd service for AI Quickstart Stack
 notify "⚙️ Registering systemd service for ${PROJECT_NAME} stack ..."
@@ -87,10 +114,10 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
-# Enable service (will start containers on boot)
+# Enable services (will start containers on boot)
 systemctl daemon-reload
 systemctl enable ${PROJECT_NAME}.service
-systemctl enable ${PROJECT_NAME}-setup.service
+[ -f "/opt/${PROJECT_NAME}/setup.sh" ] && systemctl enable ${PROJECT_NAME}-setup.service
 
 # Create .env file with domain configuration
 notify "🌐 Configuring domain with public IP..."

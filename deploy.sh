@@ -433,7 +433,7 @@ monitor_remote_log() {
 #------------------------------------------------------------------------------
 # Phase 1: Wait for instance status to become "running" and SSH accessible (max 3 minutes)
 #------------------------------------------------------------------------------
-print_msg "$YELLOW" "Waiting instance to boot up ... (this may take 2 - 3 minutes)"
+print_msg "$YELLOW" "Waiting instance to boot up ... (this may take 1 - 2 minutes)"
 scroll_up 8
 wait_for_instance_ready 180
 

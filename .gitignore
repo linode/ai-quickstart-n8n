@@ -15,6 +15,7 @@ CLAUDE.md
 pyproject.toml
 .DS_Store
 .env
+.mcp.json
 
 # test output
 test/
